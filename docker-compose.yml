@@ -1,0 +1,84 @@
+version: '3'
+services:
+  elasticsearch-hot:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elasticsearch-hot
+    environment:
+      - node.name=elasticsearch-hot
+      - cluster.name=docker-cluster
+      - discovery.seed_hosts=elasticsearch-warm
+      - cluster.initial_master_nodes=elasticsearch-hot
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - node.attr.box_type=hot
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es-hot-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+
+  elasticsearch-warm:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elasticsearch-warm
+    environment:
+      - node.name=elasticsearch-warm
+      - cluster.name=docker-cluster
+      - discovery.seed_hosts=elasticsearch-hot
+      - cluster.initial_master_nodes=elasticsearch-hot
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - node.attr.box_type=warm
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es-warm-data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.0
+    container_name: logstash
+    environment:
+      - "LS_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - ./logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+    ports:
+      - "5044:5044"
+      - "5045:5045"
+    depends_on:
+      - elasticsearch-hot
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch-hot:9200
+    depends_on:
+      - elasticsearch-hot
+    restart: unless-stopped
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.17.0
+    container_name: filebeat
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - logstash
+    restart: unless-stopped
+
+volumes:
+  es-hot-data:
+  es-warm-data:
